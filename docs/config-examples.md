@@ -347,6 +347,29 @@ Inline keys work but are not recommended for shared configs.
 }
 ```
 
+### MiniMax summaries
+
+Set `MINIMAX_API_KEY` in the environment, then select the provider. The default
+model is `MiniMax-M3`; `MiniMax-M2.7` is also supported.
+
+```json
+{
+  "semantic": {
+    "enabled": true,
+    "generateSummaries": true,
+    "summaryProvider": "minimax"
+  }
+}
+```
+
+The default endpoint is the global OpenAI-compatible API. Set
+`summaryApiBaseUrl` to select another supported API root:
+
+| Region | OpenAI-compatible | Anthropic-compatible |
+| --- | --- | --- |
+| Global | `https://api.minimax.io/v1` | `https://api.minimax.io/anthropic` |
+| China | `https://api.minimaxi.com/v1` | `https://api.minimaxi.com/anthropic` |
+
 ### Ollama or OpenAI-compatible summaries
 
 ```json

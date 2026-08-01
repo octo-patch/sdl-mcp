@@ -24,6 +24,7 @@ export interface GeneratedSummaryResult {
 
 export interface SummaryProvider {
   name: string;
+  modelName?: string;
   generate(input: {
     symbolName: string;
     kind?: string;
@@ -35,6 +36,25 @@ export interface SummaryProvider {
 
 const ANTHROPIC_SYSTEM_PROMPT =
   "You are a code documentation assistant. Write a 1-3 sentence summary of what this TypeScript/JavaScript symbol does. Be specific, not generic. Focus on behavior, not structure.";
+
+export const MINIMAX_SUMMARY_MODELS = ["MiniMax-M3", "MiniMax-M2.7"] as const;
+
+export const MINIMAX_SUMMARY_ENDPOINTS = {
+  global_en: {
+    openaiBaseUrl: "https://api.minimax.io/v1",
+    anthropicBaseUrl: "https://api.minimax.io/anthropic",
+  },
+  cn_zh: {
+    openaiBaseUrl: "https://api.minimaxi.com/v1",
+    anthropicBaseUrl: "https://api.minimaxi.com/anthropic",
+  },
+} as const;
+
+const MINIMAX_ANTHROPIC_BASE_URLS = new Set<string>(
+  Object.values(MINIMAX_SUMMARY_ENDPOINTS).map(
+    (endpoint) => endpoint.anthropicBaseUrl,
+  ),
+);
 
 function buildFallbackPreparedInput(input: {
   symbolName: string;
@@ -80,11 +100,21 @@ export class AnthropicSummaryProvider implements SummaryProvider {
   private readonly apiKey: string;
   private readonly model: string;
   private readonly baseUrl: string;
+  private readonly authHeaders: Record<string, string>;
 
-  constructor(options: { apiKey: string; model?: string; baseUrl?: string }) {
+  constructor(options: {
+    apiKey: string;
+    model?: string;
+    baseUrl?: string;
+    authMode?: "x-api-key" | "bearer";
+  }) {
     this.apiKey = options.apiKey;
     this.model = options.model ?? "claude-haiku-4-5-20251001";
     this.baseUrl = options.baseUrl ?? "https://api.anthropic.com";
+    this.authHeaders =
+      options.authMode === "bearer"
+        ? { Authorization: `Bearer ${this.apiKey}` }
+        : { "x-api-key": this.apiKey };
   }
 
   async generate(input: {
@@ -126,7 +156,7 @@ export class AnthropicSummaryProvider implements SummaryProvider {
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        "x-api-key": this.apiKey,
+        ...this.authHeaders,
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
       },
@@ -228,6 +258,47 @@ export class OpenAICompatibleSummaryProvider implements SummaryProvider {
   }
 }
 
+export class MiniMaxSummaryProvider implements SummaryProvider {
+  readonly name = "minimax";
+  readonly modelName: string;
+  readonly baseUrl: string;
+  readonly apiFormat: "openai" | "anthropic";
+  private readonly delegate: SummaryProvider;
+
+  constructor(options: { apiKey: string; model?: string; baseUrl?: string }) {
+    this.modelName = options.model ?? MINIMAX_SUMMARY_MODELS[0];
+    this.baseUrl = (
+      options.baseUrl ?? MINIMAX_SUMMARY_ENDPOINTS.global_en.openaiBaseUrl
+    ).replace(/\/+$/, "");
+    this.apiFormat = MINIMAX_ANTHROPIC_BASE_URLS.has(this.baseUrl)
+      ? "anthropic"
+      : "openai";
+    this.delegate =
+      this.apiFormat === "anthropic"
+        ? new AnthropicSummaryProvider({
+            apiKey: options.apiKey,
+            model: this.modelName,
+            baseUrl: this.baseUrl,
+            authMode: "bearer",
+          })
+        : new OpenAICompatibleSummaryProvider({
+            apiKey: options.apiKey,
+            model: this.modelName,
+            baseUrl: this.baseUrl,
+          });
+  }
+
+  generate(input: {
+    symbolName: string;
+    kind?: string;
+    signature?: string;
+    heuristicSummary?: string;
+    embeddingInput?: PreparedSymbolEmbeddingInput;
+  }): Promise<string> {
+    return this.delegate.generate(input);
+  }
+}
+
 export function createSummaryProvider(
   provider: string,
   options?: {
@@ -250,6 +321,23 @@ export function createSummaryProvider(
       apiKey,
       model: options?.summaryModel,
       baseUrl: options?.summaryApiBaseUrl ?? undefined,
+    });
+  }
+
+  if (provider === "minimax") {
+    const apiKey =
+      options?.summaryApiKey ?? process.env["MINIMAX_API_KEY"] ?? "";
+    if (!apiKey) {
+      logger.warn(
+        "No API key found for summary provider 'minimax'. Set MINIMAX_API_KEY or summaryApiKey config. " +
+          "Skipping summary generation to preserve existing summaries.",
+      );
+      return null;
+    }
+    return new MiniMaxSummaryProvider({
+      apiKey,
+      model: options?.summaryModel,
+      baseUrl: options?.summaryApiBaseUrl,
     });
   }
 
@@ -485,7 +573,8 @@ export async function generateSummaryWithGuardrails(input: {
 
   // Compute card hash for cache keying. Mock summaries include only the concise
   // builder inputs that can change deterministic prose.
-  const resolvedModel = input.summaryModel ?? summaryProvider.name;
+  const resolvedModel =
+    input.summaryModel ?? summaryProvider.modelName ?? summaryProvider.name;
   const cardHash = buildSummaryCardHash({
     symbolName: input.symbolName,
     kind: input.kind,
@@ -541,7 +630,7 @@ export async function generateSummaryWithGuardrails(input: {
         symbolId,
         summary,
         provider: summaryProvider.name,
-        model: input.summaryModel ?? summaryProvider.name,
+        model: resolvedModel,
         cardHash,
         costUsd,
         createdAt: now,
@@ -626,7 +715,8 @@ export async function generateSummariesForRepo(
   }
 
   const resolvedProviderName = resolvedSummaryProvider.name;
-  const resolvedModelName = summaryModel ?? resolvedProviderName;
+  const resolvedModelName =
+    summaryModel ?? resolvedSummaryProvider.modelName ?? resolvedProviderName;
   const isMockProvider = resolvedProviderName === "mock";
 
   // Fetch all symbols for the repo
@@ -812,7 +902,7 @@ export async function generateSummariesForRepo(
           symbolId: sym.symbolId,
           summary: genResult.summary,
           provider: genResult.provider,
-          model: summaryModel ?? genResult.provider,
+          model: resolvedModelName,
           cardHash,
           costUsd: genResult.costUsd,
           summaryQuality: metadata.quality,

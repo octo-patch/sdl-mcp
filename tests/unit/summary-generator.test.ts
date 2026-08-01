@@ -8,6 +8,9 @@ import {
   createSummaryProvider,
   generateSummariesForRepo,
   AnthropicSummaryProvider,
+  MiniMaxSummaryProvider,
+  MINIMAX_SUMMARY_ENDPOINTS,
+  MINIMAX_SUMMARY_MODELS,
   OpenAICompatibleSummaryProvider,
   summaryCacheKey,
 } from "../../dist/indexer/summary-generator.js";
@@ -56,9 +59,11 @@ function mockSummaryConfig(): AppConfig {
 
 describe("createSummaryProvider", () => {
   let originalApiKey: string | undefined;
+  let originalMiniMaxApiKey: string | undefined;
 
   before(() => {
     originalApiKey = process.env.ANTHROPIC_API_KEY;
+    originalMiniMaxApiKey = process.env.MINIMAX_API_KEY;
   });
 
   after(() => {
@@ -66,6 +71,11 @@ describe("createSummaryProvider", () => {
       delete process.env.ANTHROPIC_API_KEY;
     } else {
       process.env.ANTHROPIC_API_KEY = originalApiKey;
+    }
+    if (originalMiniMaxApiKey === undefined) {
+      delete process.env.MINIMAX_API_KEY;
+    } else {
+      process.env.MINIMAX_API_KEY = originalMiniMaxApiKey;
     }
   });
 
@@ -125,6 +135,61 @@ describe("createSummaryProvider", () => {
     });
     assert.ok(provider, "Should return a provider");
     assert.strictEqual(provider.name, "openai-compatible");
+  });
+
+  it("returns null for 'minimax' when no API key is available", () => {
+    delete process.env.MINIMAX_API_KEY;
+    const provider = createSummaryProvider("minimax");
+    assert.strictEqual(provider, null);
+  });
+
+  it("returns MiniMaxSummaryProvider with global defaults", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "test-key",
+    });
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
+    assert.strictEqual(provider.name, "minimax");
+    assert.strictEqual(provider.modelName, MINIMAX_SUMMARY_MODELS[0]);
+    assert.strictEqual(
+      provider.baseUrl,
+      MINIMAX_SUMMARY_ENDPOINTS.global_en.openaiBaseUrl,
+    );
+    assert.strictEqual(provider.apiFormat, "openai");
+  });
+
+  it("exposes the global and China OpenAI and Anthropic endpoints", () => {
+    assert.deepStrictEqual(MINIMAX_SUMMARY_ENDPOINTS, {
+      global_en: {
+        openaiBaseUrl: "https://api.minimax.io/v1",
+        anthropicBaseUrl: "https://api.minimax.io/anthropic",
+      },
+      cn_zh: {
+        openaiBaseUrl: "https://api.minimaxi.com/v1",
+        anthropicBaseUrl: "https://api.minimaxi.com/anthropic",
+      },
+    });
+  });
+
+  it("supports the alternate model and China Anthropic endpoint", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "test-key",
+      summaryModel: MINIMAX_SUMMARY_MODELS[1],
+      summaryApiBaseUrl:
+        MINIMAX_SUMMARY_ENDPOINTS.cn_zh.anthropicBaseUrl,
+    });
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
+    assert.strictEqual(provider.modelName, MINIMAX_SUMMARY_MODELS[1]);
+    assert.strictEqual(
+      provider.baseUrl,
+      MINIMAX_SUMMARY_ENDPOINTS.cn_zh.anthropicBaseUrl,
+    );
+    assert.strictEqual(provider.apiFormat, "anthropic");
+  });
+
+  it("uses MINIMAX_API_KEY for the MiniMax provider", () => {
+    process.env.MINIMAX_API_KEY = "env-test-key";
+    const provider = createSummaryProvider("minimax");
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
   });
 });
 
@@ -191,6 +256,41 @@ describe("MockSummaryProvider.generate", () => {
     });
     assert.match(result, /^Symbol my function/);
     assert.ok(!result.includes("participates in"));
+  });
+});
+
+describe("MiniMaxSummaryProvider.generate", () => {
+  it("uses bearer authorization with an Anthropic-compatible endpoint", async () => {
+    const originalFetch = globalThis.fetch;
+    let requestUrl = "";
+    let requestHeaders: HeadersInit | undefined;
+    globalThis.fetch = async (input, init) => {
+      requestUrl = String(input);
+      requestHeaders = init?.headers;
+      return new Response(
+        JSON.stringify({ content: [{ type: "text", text: "Summary." }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+
+    try {
+      const provider = new MiniMaxSummaryProvider({
+        apiKey: "test-key",
+        baseUrl: MINIMAX_SUMMARY_ENDPOINTS.global_en.anthropicBaseUrl,
+      });
+      const result = await provider.generate({ symbolName: "example" });
+
+      assert.strictEqual(result, "Summary.");
+      assert.strictEqual(
+        requestUrl,
+        `${MINIMAX_SUMMARY_ENDPOINTS.global_en.anthropicBaseUrl}/v1/messages`,
+      );
+      const headers = new Headers(requestHeaders);
+      assert.strictEqual(headers.get("authorization"), "Bearer test-key");
+      assert.strictEqual(headers.get("x-api-key"), null);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 
