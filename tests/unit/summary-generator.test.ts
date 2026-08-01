@@ -9,6 +9,9 @@ import {
   generateSummariesForRepo,
   AnthropicSummaryProvider,
   OpenAICompatibleSummaryProvider,
+  MiniMaxSummaryProvider,
+  MINIMAX_SUMMARY_ENDPOINTS,
+  MINIMAX_SUMMARY_MODELS,
   summaryCacheKey,
 } from "../../dist/indexer/summary-generator.js";
 import type {
@@ -125,6 +128,20 @@ describe("createSummaryProvider", () => {
     });
     assert.ok(provider, "Should return a provider");
     assert.strictEqual(provider.name, "openai-compatible");
+  });
+
+  it("returns null for 'minimax' provider when no API key is available", () => {
+    const provider = createSummaryProvider("minimax");
+    assert.strictEqual(provider, null);
+  });
+
+  it("returns MiniMaxSummaryProvider for 'minimax' provider with API key", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "test-key-123",
+    });
+    assert.ok(provider, "Should return a provider");
+    assert.strictEqual(provider.name, "minimax");
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
   });
 });
 
@@ -302,6 +319,66 @@ describe("OpenAICompatibleSummaryProvider construction", () => {
     // If it had used ANTHROPIC_API_KEY, it would still be openai-compatible,
     // but the test confirms the provider was created (not null) without
     // requiring an env var.
+  });
+});
+
+describe("MiniMaxSummaryProvider", () => {
+  it("uses the default model and global endpoint", async () => {
+    const originalFetch = globalThis.fetch;
+    let capturedUrl = "";
+    let capturedBody: unknown;
+    globalThis.fetch = (async (url, init) => {
+      capturedUrl = String(url);
+      capturedBody = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: "Generated." } }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    try {
+      const provider = new MiniMaxSummaryProvider({ apiKey: "test-key" });
+      const summary = await provider.generate({ symbolName: "compileRoute" });
+
+      assert.strictEqual(summary, "Generated.");
+      assert.strictEqual(
+        capturedUrl,
+        `${MINIMAX_SUMMARY_ENDPOINTS.global_en.openaiBaseUrl}/chat/completions`,
+      );
+      assert.deepStrictEqual(
+        (capturedBody as { model?: string }).model,
+        MINIMAX_SUMMARY_MODELS[0],
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("accepts the CN endpoint override", async () => {
+    const originalFetch = globalThis.fetch;
+    let capturedUrl = "";
+    globalThis.fetch = (async (url) => {
+      capturedUrl = String(url);
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: "Generated." } }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    try {
+      const provider = new MiniMaxSummaryProvider({
+        apiKey: "test-key",
+        baseUrl: MINIMAX_SUMMARY_ENDPOINTS.cn_zh.openaiBaseUrl,
+      });
+      await provider.generate({ symbolName: "compileRoute" });
+
+      assert.strictEqual(
+        capturedUrl,
+        `${MINIMAX_SUMMARY_ENDPOINTS.cn_zh.openaiBaseUrl}/chat/completions`,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

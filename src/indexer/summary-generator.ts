@@ -228,6 +228,32 @@ export class OpenAICompatibleSummaryProvider implements SummaryProvider {
   }
 }
 
+export const MINIMAX_SUMMARY_MODELS = ["MiniMax-M3", "MiniMax-M2.7"] as const;
+
+export const MINIMAX_SUMMARY_ENDPOINTS = {
+  global_en: {
+    openaiBaseUrl: "https://api.minimax.io/v1",
+    anthropicBaseUrl: "https://api.minimax.io/anthropic",
+  },
+  cn_zh: {
+    openaiBaseUrl: "https://api.minimaxi.com/v1",
+    anthropicBaseUrl: "https://api.minimaxi.com/anthropic",
+  },
+} as const;
+
+export class MiniMaxSummaryProvider extends OpenAICompatibleSummaryProvider {
+  name = "minimax";
+
+  constructor(options: { apiKey: string; model?: string; baseUrl?: string }) {
+    super({
+      apiKey: options.apiKey,
+      model: options.model ?? MINIMAX_SUMMARY_MODELS[0],
+      baseUrl:
+        options.baseUrl ?? MINIMAX_SUMMARY_ENDPOINTS.global_en.openaiBaseUrl,
+    });
+  }
+}
+
 export function createSummaryProvider(
   provider: string,
   options?: {
@@ -262,6 +288,22 @@ export function createSummaryProvider(
       apiKey,
       model: options?.summaryModel,
       baseUrl: options?.summaryApiBaseUrl,
+    });
+  }
+
+  if (provider === "minimax") {
+    const apiKey = options?.summaryApiKey ?? "";
+    if (!apiKey) {
+      logger.warn(
+        "No API key found for summary provider 'minimax'. Set summaryApiKey config. " +
+          "Skipping summary generation to preserve existing summaries.",
+      );
+      return null;
+    }
+    return new MiniMaxSummaryProvider({
+      apiKey,
+      model: options?.summaryModel,
+      baseUrl: options?.summaryApiBaseUrl ?? undefined,
     });
   }
 
