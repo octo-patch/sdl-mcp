@@ -310,6 +310,7 @@ Each symbol now carries `summaryQuality` (0.0-1.0) and `summarySource` fields tr
 | Provider              | Config value | Model default               | Requires                                         |
 | :-------------------- | :----------- | :-------------------------- | :----------------------------------------------- |
 | **Anthropic API**     | `"api"`      | `claude-haiku-4-5-20251001` | `summaryApiKey` or `ANTHROPIC_API_KEY` env var   |
+| **MiniMax**           | `"minimax"`  | `MiniMax-M3`                | `summaryApiKey` or `MINIMAX_API_KEY` env var     |
 | **OpenAI-compatible** | `"local"`    | `gpt-4o-mini`               | Local server (e.g., Ollama at `localhost:11434`) |
 | **Mock**              | `"mock"`     | —                           | Nothing (deterministic heuristic patterns)       |
 

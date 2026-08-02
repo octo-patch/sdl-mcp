@@ -36,6 +36,9 @@ export interface SummaryProvider {
 const ANTHROPIC_SYSTEM_PROMPT =
   "You are a code documentation assistant. Write a 1-3 sentence summary of what this TypeScript/JavaScript symbol does. Be specific, not generic. Focus on behavior, not structure.";
 
+const MINIMAX_DEFAULT_MODEL = "MiniMax-M3";
+const MINIMAX_DEFAULT_ANTHROPIC_BASE_URL = "https://api.minimax.io/anthropic";
+
 function buildFallbackPreparedInput(input: {
   symbolName: string;
   kind?: string;
@@ -228,6 +231,43 @@ export class OpenAICompatibleSummaryProvider implements SummaryProvider {
   }
 }
 
+export class MiniMaxSummaryProvider implements SummaryProvider {
+  name = "minimax";
+  private readonly delegate: SummaryProvider;
+
+  constructor(options: { apiKey: string; model?: string; baseUrl?: string }) {
+    const model = options.model ?? MINIMAX_DEFAULT_MODEL;
+    const baseUrl = (options.baseUrl ?? MINIMAX_DEFAULT_ANTHROPIC_BASE_URL).replace(
+      /\/+$/,
+      "",
+    );
+
+    if (baseUrl.includes("/anthropic")) {
+      this.delegate = new AnthropicSummaryProvider({
+        apiKey: options.apiKey,
+        model,
+        baseUrl,
+      });
+    } else {
+      this.delegate = new OpenAICompatibleSummaryProvider({
+        apiKey: options.apiKey,
+        model,
+        baseUrl,
+      });
+    }
+  }
+
+  async generate(input: {
+    symbolName: string;
+    kind?: string;
+    signature?: string;
+    heuristicSummary?: string;
+    embeddingInput?: PreparedSymbolEmbeddingInput;
+  }): Promise<string> {
+    return this.delegate.generate(input);
+  }
+}
+
 export function createSummaryProvider(
   provider: string,
   options?: {
@@ -262,6 +302,23 @@ export function createSummaryProvider(
       apiKey,
       model: options?.summaryModel,
       baseUrl: options?.summaryApiBaseUrl,
+    });
+  }
+
+  if (provider === "minimax") {
+    const apiKey =
+      options?.summaryApiKey ?? process.env["MINIMAX_API_KEY"] ?? "";
+    if (!apiKey) {
+      logger.warn(
+        "No API key found for summary provider 'minimax'. Set MINIMAX_API_KEY or summaryApiKey config. " +
+          "Skipping summary generation to preserve existing summaries.",
+      );
+      return null;
+    }
+    return new MiniMaxSummaryProvider({
+      apiKey,
+      model: options?.summaryModel,
+      baseUrl: options?.summaryApiBaseUrl ?? undefined,
     });
   }
 

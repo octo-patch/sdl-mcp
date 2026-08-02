@@ -8,6 +8,7 @@ import {
   createSummaryProvider,
   generateSummariesForRepo,
   AnthropicSummaryProvider,
+  MiniMaxSummaryProvider,
   OpenAICompatibleSummaryProvider,
   summaryCacheKey,
 } from "../../dist/indexer/summary-generator.js";
@@ -108,6 +109,15 @@ describe("createSummaryProvider", () => {
     assert.ok(provider, "Should return a provider");
     assert.strictEqual(provider.name, "openai-compatible");
     assert.ok(provider instanceof OpenAICompatibleSummaryProvider);
+  });
+
+  it("returns MiniMaxSummaryProvider for 'minimax' provider with API key", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "test-key",
+    });
+    assert.ok(provider, "Should return a provider");
+    assert.strictEqual(provider.name, "minimax");
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
   });
 
   it("passes custom model to 'api' provider", () => {
@@ -302,6 +312,90 @@ describe("OpenAICompatibleSummaryProvider construction", () => {
     // If it had used ANTHROPIC_API_KEY, it would still be openai-compatible,
     // but the test confirms the provider was created (not null) without
     // requiring an env var.
+  });
+});
+
+describe("MiniMaxSummaryProvider construction", () => {
+  it("uses the MiniMax Anthropic-compatible default endpoint and model", async () => {
+    const provider = new MiniMaxSummaryProvider({
+      apiKey: "test-key",
+    });
+
+    const originalFetch = globalThis.fetch;
+    let capturedUrl = "";
+    let capturedBody = "";
+    let capturedHeaders: Record<string, string> = {};
+
+    (globalThis as any).fetch = async (url: unknown, init?: unknown) => {
+      capturedUrl = String(url);
+      const requestInit = init as { body?: string; headers?: Record<string, string> };
+      capturedBody = requestInit.body ?? "";
+      capturedHeaders = requestInit.headers ?? {};
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ content: [{ type: "text", text: "mini summary" }] }),
+        text: async () => "",
+      } as any;
+    };
+
+    try {
+      const result = await provider.generate({
+        symbolName: "loadMiniMax",
+        kind: "function",
+      });
+
+      assert.strictEqual(result, "mini summary");
+      assert.strictEqual(
+        capturedUrl,
+        "https://api.minimax.io/anthropic/v1/messages",
+      );
+      assert.strictEqual(capturedHeaders["x-api-key"], "test-key");
+      const body = JSON.parse(capturedBody) as { model?: string };
+      assert.strictEqual(body.model, "MiniMax-M3");
+    } finally {
+      (globalThis as any).fetch = originalFetch;
+    }
+  });
+
+  it("uses the MiniMax OpenAI-compatible endpoint when requested", async () => {
+    const provider = new MiniMaxSummaryProvider({
+      apiKey: "test-key",
+      baseUrl: "https://api.minimax.io/v1",
+    });
+
+    const originalFetch = globalThis.fetch;
+    let capturedUrl = "";
+    let capturedBody = "";
+    let capturedHeaders: Record<string, string> = {};
+
+    (globalThis as any).fetch = async (url: unknown, init?: unknown) => {
+      capturedUrl = String(url);
+      const requestInit = init as { body?: string; headers?: Record<string, string> };
+      capturedBody = requestInit.body ?? "";
+      capturedHeaders = requestInit.headers ?? {};
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: "mini summary" } }] }),
+        text: async () => "",
+      } as any;
+    };
+
+    try {
+      const result = await provider.generate({
+        symbolName: "loadMiniMax",
+        kind: "function",
+      });
+
+      assert.strictEqual(result, "mini summary");
+      assert.strictEqual(capturedUrl, "https://api.minimax.io/v1/chat/completions");
+      assert.strictEqual(capturedHeaders.Authorization, "Bearer test-key");
+      const body = JSON.parse(capturedBody) as { model?: string };
+      assert.strictEqual(body.model, "MiniMax-M3");
+    } finally {
+      (globalThis as any).fetch = originalFetch;
+    }
   });
 });
 

@@ -418,6 +418,7 @@ The `summaryProvider: "local"` value sends OpenAI-format requests (`POST /chat/c
 | Provider           | Config value | Default model               | Endpoint                                     | Auth                                   | Cost                 |
 | :----------------- | :----------- | :-------------------------- | :------------------------------------------- | :------------------------------------- | :------------------- |
 | **Anthropic**      | `"api"`      | `claude-haiku-4-5-20251001` | `https://api.anthropic.com/v1/messages`      | `ANTHROPIC_API_KEY` or `summaryApiKey` | ~$2/1M tokens        |
+| **MiniMax**        | `"minimax"`  | `MiniMax-M3`                | `https://api.minimax.io/anthropic/v1/messages`                      | `MINIMAX_API_KEY` or `summaryApiKey`   | Hosted pricing        |
 | **Ollama / Local** | `"local"`    | `gpt-4o-mini`               | `http://localhost:11434/v1/chat/completions` | Optional (default: `"ollama"`)         | Free (local compute) |
 | **Mock**           | `"mock"`     | �                           | None                                         | None                                   | Free                 |
 

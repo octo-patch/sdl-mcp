@@ -735,6 +735,7 @@ flowchart TD
 | Provider                        | Model (default)             | Endpoint                   | Best For                               |
 | :------------------------------ | :-------------------------- | :------------------------- | :------------------------------------- |
 | **`api`** (Anthropic)           | `claude-haiku-4-5-20251001` | `api.anthropic.com`        | Production (fast, cheap, high quality) |
+| **`minimax`** (Anthropic-compatible) | `MiniMax-M3`                | `api.minimax.io/anthropic` | Hosted MiniMax summaries               |
 | **`local`** (OpenAI-compatible) | `gpt-4o-mini`               | `localhost:11434` (Ollama) | Offline / air-gapped environments      |
 | **`mock`**                      | —                           | —                          | Testing, CI pipelines                  |
 
