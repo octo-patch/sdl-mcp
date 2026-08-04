@@ -583,14 +583,22 @@ export const SemanticConfigSchema = z.object({
   modelCacheDir: z.string().nullish(),
   generateSummaries: z.boolean().default(true),
   /** Summary backend, independent from the embedding provider.
-   *  "api" = Anthropic, "local" = OpenAI-compatible (Ollama), "mock" = deterministic concise prose.
+   *  "api" = Anthropic, "local" = OpenAI-compatible (Ollama),
+   *  "minimax" = MiniMax M-series via the Anthropic-compatible Messages API,
+   *  "mock" = deterministic concise prose.
    *  Defaults to "mock" so summary generation never requires LLM credentials unless explicitly configured. */
-  summaryProvider: z.enum(["api", "local", "mock"]).nullish().default("mock"),
+  summaryProvider: z
+    .enum(["api", "local", "mock", "minimax"])
+    .nullish()
+    .default("mock"),
 
   /** Model name for summary generation. Defaults per-provider:
-   *  "api" â†’ "claude-haiku-4-5-20251001", "local" â†’ "gpt-4o-mini" (OpenAI-compatible). */
+   *  "api" â†’ "claude-haiku-4-5-20251001", "local" â†’ "gpt-4o-mini" (OpenAI-compatible),
+   *  "minimax" â†’ "MiniMax-M3". */
   summaryModel: z.string().nullish(),
   summaryApiKey: z.string().nullish(),
+  /** Custom base URL for the summary provider. For "minimax" this can select the
+   *  China region endpoint, e.g. https://api.minimaxi.com/anthropic. */
   summaryApiBaseUrl: z.string().nullish(),
   summaryMaxConcurrency: z.number().int().min(1).max(32).default(5),
   summaryBatchSize: z.number().int().min(1).max(50).default(20),

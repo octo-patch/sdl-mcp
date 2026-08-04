@@ -9,6 +9,7 @@ import {
   generateSummariesForRepo,
   AnthropicSummaryProvider,
   OpenAICompatibleSummaryProvider,
+  MiniMaxSummaryProvider,
   summaryCacheKey,
 } from "../../dist/indexer/summary-generator.js";
 import type {
@@ -56,9 +57,11 @@ function mockSummaryConfig(): AppConfig {
 
 describe("createSummaryProvider", () => {
   let originalApiKey: string | undefined;
+  let originalMiniMaxApiKey: string | undefined;
 
   before(() => {
     originalApiKey = process.env.ANTHROPIC_API_KEY;
+    originalMiniMaxApiKey = process.env.MINIMAX_API_KEY;
   });
 
   after(() => {
@@ -66,6 +69,11 @@ describe("createSummaryProvider", () => {
       delete process.env.ANTHROPIC_API_KEY;
     } else {
       process.env.ANTHROPIC_API_KEY = originalApiKey;
+    }
+    if (originalMiniMaxApiKey === undefined) {
+      delete process.env.MINIMAX_API_KEY;
+    } else {
+      process.env.MINIMAX_API_KEY = originalMiniMaxApiKey;
     }
   });
 
@@ -125,6 +133,38 @@ describe("createSummaryProvider", () => {
     });
     assert.ok(provider, "Should return a provider");
     assert.strictEqual(provider.name, "openai-compatible");
+  });
+
+  it("returns null for 'minimax' provider when no API key is available", () => {
+    delete process.env.MINIMAX_API_KEY;
+    const provider = createSummaryProvider("minimax");
+    assert.strictEqual(provider, null);
+  });
+
+  it("returns MiniMaxSummaryProvider for 'minimax' provider with API key", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "minimax-test-key",
+    });
+    assert.ok(provider, "Should return a provider");
+    assert.strictEqual(provider.name, "minimax");
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
+  });
+
+  it("uses MINIMAX_API_KEY env var for 'minimax' provider", () => {
+    process.env.MINIMAX_API_KEY = "env-minimax-test-key";
+    const provider = createSummaryProvider("minimax");
+    assert.ok(provider, "Should return a provider");
+    assert.strictEqual(provider.name, "minimax");
+  });
+
+  it("passes custom model and base URL to 'minimax' provider", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "minimax-test-key",
+      summaryModel: "MiniMax-M2.7",
+      summaryApiBaseUrl: "https://api.minimaxi.com/anthropic",
+    });
+    assert.ok(provider, "Should return a provider");
+    assert.strictEqual(provider.name, "minimax");
   });
 });
 
@@ -302,6 +342,22 @@ describe("OpenAICompatibleSummaryProvider construction", () => {
     // If it had used ANTHROPIC_API_KEY, it would still be openai-compatible,
     // but the test confirms the provider was created (not null) without
     // requiring an env var.
+  });
+});
+
+describe("MiniMaxSummaryProvider construction", () => {
+  it("creates provider with required apiKey", () => {
+    const provider = new MiniMaxSummaryProvider({ apiKey: "minimax-test-key" });
+    assert.strictEqual(provider.name, "minimax");
+  });
+
+  it("accepts optional model and baseUrl", () => {
+    const provider = new MiniMaxSummaryProvider({
+      apiKey: "minimax-test-key",
+      model: "MiniMax-M2.7",
+      baseUrl: "https://api.minimaxi.com/anthropic/",
+    });
+    assert.strictEqual(provider.name, "minimax");
   });
 });
 

@@ -228,6 +228,81 @@ export class OpenAICompatibleSummaryProvider implements SummaryProvider {
   }
 }
 
+export class MiniMaxSummaryProvider implements SummaryProvider {
+  name = "minimax";
+  private readonly apiKey: string;
+  private readonly model: string;
+  private readonly baseUrl: string;
+
+  constructor(options: { apiKey: string; model?: string; baseUrl?: string }) {
+    this.apiKey = options.apiKey;
+    this.model = options.model ?? "MiniMax-M3";
+    this.baseUrl = (
+      options.baseUrl ?? "https://api.minimax.io/anthropic"
+    ).replace(/\/+$/, "");
+  }
+
+  async generate(input: {
+    symbolName: string;
+    kind?: string;
+    signature?: string;
+    heuristicSummary?: string;
+  }): Promise<string> {
+    const parts: string[] = [];
+    if (input.kind) {
+      parts.push(`Kind: ${input.kind}`);
+    }
+    parts.push(`Name: ${input.symbolName}`);
+    if (input.signature) {
+      const sig =
+        input.signature.length > 400
+          ? input.signature.slice(0, 400) + "..."
+          : input.signature;
+      parts.push(`Signature: ${sig}`);
+    }
+    if (input.heuristicSummary && input.heuristicSummary.trim().length > 0) {
+      const hint =
+        input.heuristicSummary.length > 200
+          ? input.heuristicSummary.slice(0, 200) + "..."
+          : input.heuristicSummary;
+      parts.push(`Heuristic hint: ${hint}`);
+    }
+    const userContent = parts.join("\n");
+
+    const url = `${this.baseUrl}/v1/messages`;
+    const body = {
+      model: this.model,
+      max_tokens: 256,
+      system: ANTHROPIC_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userContent }],
+    };
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const rawBody = await response.text().catch(() => "");
+      const truncated =
+        rawBody.length > 200 ? rawBody.slice(0, 200) + "..." : rawBody;
+      throw new Error(
+        `MiniMax API error: HTTP ${response.status} - ${truncated}`,
+      );
+    }
+
+    const data = (await response.json()) as {
+      content?: Array<{ type: string; text: string }>;
+    };
+    const text = data?.content?.[0]?.text ?? "";
+    return text.trim();
+  }
+}
+
 export function createSummaryProvider(
   provider: string,
   options?: {
@@ -262,6 +337,25 @@ export function createSummaryProvider(
       apiKey,
       model: options?.summaryModel,
       baseUrl: options?.summaryApiBaseUrl,
+    });
+  }
+
+  if (provider === "minimax") {
+    // MiniMax M-series models are served over an Anthropic-compatible Messages
+    // endpoint. Do NOT fall back to ANTHROPIC_API_KEY — use a MiniMax key.
+    const apiKey =
+      options?.summaryApiKey ?? process.env["MINIMAX_API_KEY"] ?? "";
+    if (!apiKey) {
+      logger.warn(
+        "No API key found for summary provider 'minimax'. Set MINIMAX_API_KEY or summaryApiKey config. " +
+          "Skipping summary generation to preserve existing summaries.",
+      );
+      return null;
+    }
+    return new MiniMaxSummaryProvider({
+      apiKey,
+      model: options?.summaryModel,
+      baseUrl: options?.summaryApiBaseUrl ?? undefined,
     });
   }
 
