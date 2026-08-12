@@ -8,6 +8,9 @@ import {
   createSummaryProvider,
   generateSummariesForRepo,
   AnthropicSummaryProvider,
+  MiniMaxSummaryProvider,
+  MINIMAX_SUMMARY_ENDPOINTS,
+  MINIMAX_SUMMARY_MODELS,
   OpenAICompatibleSummaryProvider,
   summaryCacheKey,
 } from "../../dist/indexer/summary-generator.js";
@@ -56,9 +59,11 @@ function mockSummaryConfig(): AppConfig {
 
 describe("createSummaryProvider", () => {
   let originalApiKey: string | undefined;
+  let originalMiniMaxApiKey: string | undefined;
 
   before(() => {
     originalApiKey = process.env.ANTHROPIC_API_KEY;
+    originalMiniMaxApiKey = process.env.MINIMAX_API_KEY;
   });
 
   after(() => {
@@ -66,6 +71,11 @@ describe("createSummaryProvider", () => {
       delete process.env.ANTHROPIC_API_KEY;
     } else {
       process.env.ANTHROPIC_API_KEY = originalApiKey;
+    }
+    if (originalMiniMaxApiKey === undefined) {
+      delete process.env.MINIMAX_API_KEY;
+    } else {
+      process.env.MINIMAX_API_KEY = originalMiniMaxApiKey;
     }
   });
 
@@ -125,6 +135,98 @@ describe("createSummaryProvider", () => {
     });
     assert.ok(provider, "Should return a provider");
     assert.strictEqual(provider.name, "openai-compatible");
+  });
+
+  it("returns null for MiniMax when no API key is available", () => {
+    delete process.env.MINIMAX_API_KEY;
+    const provider = createSummaryProvider("minimax");
+    assert.strictEqual(provider, null);
+  });
+
+  it("returns MiniMaxSummaryProvider with an explicit API key", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "test-key",
+    });
+    assert.ok(provider);
+    assert.strictEqual(provider.name, "minimax");
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
+  });
+});
+
+describe("MiniMaxSummaryProvider", () => {
+  it("publishes the supported models and regional protocol endpoints", () => {
+    assert.deepStrictEqual(MINIMAX_SUMMARY_MODELS, [
+      "MiniMax-M3",
+      "MiniMax-M2.7",
+    ]);
+    assert.deepStrictEqual(MINIMAX_SUMMARY_ENDPOINTS, {
+      global_en: {
+        openai: "https://api.minimax.io/v1",
+        anthropic: "https://api.minimax.io/anthropic",
+      },
+      cn_zh: {
+        openai: "https://api.minimaxi.com/v1",
+        anthropic: "https://api.minimaxi.com/anthropic",
+      },
+    });
+  });
+
+  it("uses the global endpoint and MiniMax-M3 by default", async () => {
+    const originalFetch = globalThis.fetch;
+    let requestUrl = "";
+    let requestBody: Record<string, unknown> = {};
+    globalThis.fetch = (async (input, init) => {
+      requestUrl = String(input);
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: "Summary" } }] }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+
+    try {
+      const provider = new MiniMaxSummaryProvider({ apiKey: "test-key" });
+      const summary = await provider.generate({ symbolName: "parseConfig" });
+      assert.strictEqual(summary, "Summary");
+      assert.strictEqual(
+        requestUrl,
+        "https://api.minimax.io/v1/chat/completions",
+      );
+      assert.strictEqual(requestBody.model, "MiniMax-M3");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("uses the CN endpoint with MiniMax-M2.7", async () => {
+    const originalFetch = globalThis.fetch;
+    let requestUrl = "";
+    let requestBody: Record<string, unknown> = {};
+    globalThis.fetch = (async (input, init) => {
+      requestUrl = String(input);
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({ content: [{ type: "text", text: "Summary" }] }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+
+    try {
+      const provider = new MiniMaxSummaryProvider({
+        apiKey: "test-key",
+        model: "MiniMax-M2.7",
+        baseUrl: MINIMAX_SUMMARY_ENDPOINTS.cn_zh.anthropic,
+      });
+      const summary = await provider.generate({ symbolName: "parseConfig" });
+      assert.strictEqual(summary, "Summary");
+      assert.strictEqual(
+        requestUrl,
+        "https://api.minimaxi.com/anthropic/v1/messages",
+      );
+      assert.strictEqual(requestBody.model, "MiniMax-M2.7");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

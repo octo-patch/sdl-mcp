@@ -260,6 +260,11 @@ describe("SemanticConfigSchema defaults", () => {
     assert.strictEqual(result.summaryProvider, null);
   });
 
+  it("SemanticConfigSchema.summaryProvider accepts MiniMax", () => {
+    const result = SemanticConfigSchema.parse({ summaryProvider: "minimax" });
+    assert.strictEqual(result.summaryProvider, "minimax");
+  });
+
 
 });
 
