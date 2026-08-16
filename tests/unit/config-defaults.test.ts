@@ -260,6 +260,37 @@ describe("SemanticConfigSchema defaults", () => {
     assert.strictEqual(result.summaryProvider, null);
   });
 
+  it("SemanticConfigSchema.summaryProvider accepts the minimax backend", () => {
+    const result = SemanticConfigSchema.parse({
+      summaryProvider: "minimax",
+      summaryModel: "MiniMax-M3",
+      summaryApiRegion: "cn",
+      summaryApiWireFormat: "anthropic",
+    });
+    assert.strictEqual(result.summaryProvider, "minimax");
+    assert.strictEqual(result.summaryModel, "MiniMax-M3");
+    assert.strictEqual(result.summaryApiRegion, "cn");
+    assert.strictEqual(result.summaryApiWireFormat, "anthropic");
+  });
+
+  it("SemanticConfigSchema leaves summary endpoint selectors unset by default", () => {
+    const result = SemanticConfigSchema.parse({});
+    assert.strictEqual(result.summaryApiRegion, undefined);
+    assert.strictEqual(result.summaryApiWireFormat, undefined);
+  });
+
+  it("SemanticConfigSchema rejects unknown summary endpoint selectors", () => {
+    assert.strictEqual(
+      SemanticConfigSchema.safeParse({ summaryApiRegion: "moon" }).success,
+      false,
+    );
+    assert.strictEqual(
+      SemanticConfigSchema.safeParse({ summaryApiWireFormat: "telepathy" })
+        .success,
+      false,
+    );
+  });
+
 
 });
 

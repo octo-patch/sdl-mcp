@@ -228,12 +228,105 @@ export class OpenAICompatibleSummaryProvider implements SummaryProvider {
   }
 }
 
+/** Wire protocol used to talk to a MiniMax summary endpoint. */
+export type MiniMaxWireFormat = "openai" | "anthropic";
+
+/** MiniMax deployment region. `global` serves the international endpoints,
+ *  `cn` serves the mainland China endpoints. */
+export type MiniMaxRegion = "global" | "cn";
+
+/** Default MiniMax summary model. */
+export const MINIMAX_DEFAULT_SUMMARY_MODEL = "MiniMax-M3";
+
+/** MiniMax text models usable for summary generation. `MiniMax-M3` is the
+ *  1M-context default; `MiniMax-M2.7` is the cheaper 204800-context option. */
+export const MINIMAX_SUMMARY_MODELS = ["MiniMax-M3", "MiniMax-M2.7"] as const;
+
+export const MINIMAX_DEFAULT_REGION: MiniMaxRegion = "global";
+
+export const MINIMAX_DEFAULT_WIRE_FORMAT: MiniMaxWireFormat = "openai";
+
+/** MiniMax base URLs per region and wire protocol. */
+export const MINIMAX_BASE_URLS: Record<
+  MiniMaxRegion,
+  Record<MiniMaxWireFormat, string>
+> = {
+  global: {
+    openai: "https://api.minimax.io/v1",
+    anthropic: "https://api.minimax.io/anthropic",
+  },
+  cn: {
+    openai: "https://api.minimaxi.com/v1",
+    anthropic: "https://api.minimaxi.com/anthropic",
+  },
+};
+
+/** Resolves the MiniMax base URL for a region / wire protocol pair. */
+export function resolveMiniMaxBaseUrl(
+  region: MiniMaxRegion = MINIMAX_DEFAULT_REGION,
+  wireFormat: MiniMaxWireFormat = MINIMAX_DEFAULT_WIRE_FORMAT,
+): string {
+  return MINIMAX_BASE_URLS[region][wireFormat];
+}
+
+/**
+ * MiniMax summary backend. MiniMax exposes both an OpenAI-shaped
+ * `/chat/completions` endpoint and a message-shaped `/v1/messages` endpoint on
+ * separate base URLs, so the wire protocol is selectable and the HTTP work is
+ * delegated to the matching transport already implemented in this module.
+ * The reported provider name stays `minimax` so summary cache rows and card
+ * hashes stay distinct from the generic backends.
+ */
+export class MiniMaxSummaryProvider implements SummaryProvider {
+  name = "minimax";
+  readonly model: string;
+  readonly region: MiniMaxRegion;
+  readonly wireFormat: MiniMaxWireFormat;
+  readonly baseUrl: string;
+  private readonly transport: SummaryProvider;
+
+  constructor(options: {
+    apiKey: string;
+    model?: string | undefined;
+    baseUrl?: string | undefined;
+    region?: MiniMaxRegion | undefined;
+    wireFormat?: MiniMaxWireFormat | undefined;
+  }) {
+    this.model = options.model ?? MINIMAX_DEFAULT_SUMMARY_MODEL;
+    this.region = options.region ?? MINIMAX_DEFAULT_REGION;
+    this.wireFormat = options.wireFormat ?? MINIMAX_DEFAULT_WIRE_FORMAT;
+    this.baseUrl = (
+      options.baseUrl ?? resolveMiniMaxBaseUrl(this.region, this.wireFormat)
+    ).replace(/\/+$/, "");
+    const transportOptions = {
+      apiKey: options.apiKey,
+      model: this.model,
+      baseUrl: this.baseUrl,
+    };
+    this.transport =
+      this.wireFormat === "anthropic"
+        ? new AnthropicSummaryProvider(transportOptions)
+        : new OpenAICompatibleSummaryProvider(transportOptions);
+  }
+
+  async generate(input: {
+    symbolName: string;
+    kind?: string;
+    signature?: string;
+    heuristicSummary?: string;
+  }): Promise<string> {
+    return this.transport.generate(input);
+  }
+}
+
 export function createSummaryProvider(
   provider: string,
   options?: {
     summaryModel?: string;
     summaryApiKey?: string;
     summaryApiBaseUrl?: string;
+    summaryApiRegion?: MiniMaxRegion;
+    summaryApiWireFormat?: MiniMaxWireFormat;
   },
 ): SummaryProvider | null {
   if (provider === "api") {
@@ -250,6 +343,27 @@ export function createSummaryProvider(
       apiKey,
       model: options?.summaryModel,
       baseUrl: options?.summaryApiBaseUrl ?? undefined,
+    });
+  }
+
+  if (provider === "minimax") {
+    // MiniMax is a distinct hosted backend with its own credential, so it must
+    // not fall back to another backend's API key env var.
+    const apiKey =
+      options?.summaryApiKey ?? process.env["MINIMAX_API_KEY"] ?? "";
+    if (!apiKey) {
+      logger.warn(
+        "No API key found for summary provider 'minimax'. Set MINIMAX_API_KEY or summaryApiKey config. " +
+          "Skipping summary generation to preserve existing summaries.",
+      );
+      return null;
+    }
+    return new MiniMaxSummaryProvider({
+      apiKey,
+      model: options?.summaryModel,
+      baseUrl: options?.summaryApiBaseUrl ?? undefined,
+      region: options?.summaryApiRegion,
+      wireFormat: options?.summaryApiWireFormat,
     });
   }
 
@@ -452,6 +566,8 @@ export async function generateSummaryWithGuardrails(input: {
   summaryModel?: string;
   summaryApiKey?: string;
   summaryApiBaseUrl?: string;
+  summaryApiRegion?: MiniMaxRegion;
+  summaryApiWireFormat?: MiniMaxWireFormat;
   skipCacheLookup?: boolean;
   persistCache?: boolean;
 }): Promise<GeneratedSummaryResult> {
@@ -461,6 +577,8 @@ export async function generateSummaryWithGuardrails(input: {
     summaryModel: input.summaryModel,
     summaryApiKey: input.summaryApiKey,
     summaryApiBaseUrl: input.summaryApiBaseUrl,
+    summaryApiRegion: input.summaryApiRegion,
+    summaryApiWireFormat: input.summaryApiWireFormat,
   });
 
   // If provider creation returned null (e.g., misconfigured local provider),
@@ -600,6 +718,8 @@ export async function generateSummariesForRepo(
   const summaryModel = semantic.summaryModel;
   const summaryApiKey = semantic.summaryApiKey;
   const summaryApiBaseUrl = semantic.summaryApiBaseUrl;
+  const summaryApiRegion = semantic.summaryApiRegion;
+  const summaryApiWireFormat = semantic.summaryApiWireFormat;
 
   // Resolve the actual provider to determine its name for cache hashing.
   // This must match what generateSummaryWithGuardrails computes internally.
@@ -607,6 +727,8 @@ export async function generateSummariesForRepo(
     summaryModel: summaryModel ?? undefined,
     summaryApiKey: summaryApiKey ?? undefined,
     summaryApiBaseUrl: summaryApiBaseUrl ?? undefined,
+    summaryApiRegion: summaryApiRegion ?? undefined,
+    summaryApiWireFormat: summaryApiWireFormat ?? undefined,
   });
 
   // If provider creation returned null (e.g., misconfigured local provider),
@@ -803,6 +925,8 @@ export async function generateSummariesForRepo(
           summaryModel: summaryModel ?? undefined,
           summaryApiKey: summaryApiKey ?? undefined,
           summaryApiBaseUrl: summaryApiBaseUrl ?? undefined,
+          summaryApiRegion: summaryApiRegion ?? undefined,
+          summaryApiWireFormat: summaryApiWireFormat ?? undefined,
           skipCacheLookup: true,
           persistCache: false,
         });

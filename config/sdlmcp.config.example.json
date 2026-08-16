@@ -170,6 +170,8 @@
     "summaryModel": null,
     "summaryApiKey": null,
     "summaryApiBaseUrl": null,
+    "summaryApiRegion": null,
+    "summaryApiWireFormat": null,
     "summaryMaxConcurrency": 5,
     "summaryBatchSize": 20,
     "embeddingConcurrency": 1,
