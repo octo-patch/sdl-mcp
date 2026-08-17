@@ -228,6 +228,115 @@ export class OpenAICompatibleSummaryProvider implements SummaryProvider {
   }
 }
 
+/** Default MiniMax summary model. */
+export const MINIMAX_DEFAULT_MODEL = "MiniMax-M3";
+
+/** MiniMax summary models known to this provider, newest first. */
+export const MINIMAX_MODELS = ["MiniMax-M3", "MiniMax-M2.7"] as const;
+
+/**
+ * Regional MiniMax API hosts. Each region exposes both a chat-completions
+ * surface (`/chat/completions`) and a messages surface (`/v1/messages`), so the
+ * same credential works with either wire format.
+ */
+export const MINIMAX_REGION_ENDPOINTS = {
+  global_en: {
+    openaiBaseUrl: "https://api.minimax.io/v1",
+    anthropicBaseUrl: "https://api.minimax.io/anthropic",
+  },
+  cn_zh: {
+    openaiBaseUrl: "https://api.minimaxi.com/v1",
+    anthropicBaseUrl: "https://api.minimaxi.com/anthropic",
+  },
+} as const;
+
+export type MiniMaxRegion = keyof typeof MINIMAX_REGION_ENDPOINTS;
+
+export type MiniMaxApiFlavor = "openai" | "anthropic";
+
+/**
+ * Resolve the base URL and wire format for a MiniMax summary request.
+ *
+ * An explicit `baseUrl` always wins so operators can point at a gateway; when
+ * it is omitted the regional defaults are used. The wire format is inferred
+ * from the `/anthropic` URL suffix unless it is passed explicitly.
+ */
+export function resolveMiniMaxEndpoint(options?: {
+  baseUrl?: string | null;
+  region?: MiniMaxRegion;
+  api?: MiniMaxApiFlavor;
+}): { baseUrl: string; api: MiniMaxApiFlavor } {
+  const explicitBaseUrl = (options?.baseUrl ?? "").trim().replace(/\/+$/, "");
+  if (explicitBaseUrl.length > 0) {
+    return {
+      baseUrl: explicitBaseUrl,
+      api:
+        options?.api ??
+        (/\/anthropic$/.test(explicitBaseUrl) ? "anthropic" : "openai"),
+    };
+  }
+  const endpoints = MINIMAX_REGION_ENDPOINTS[options?.region ?? "global_en"];
+  const api = options?.api ?? "openai";
+  return {
+    baseUrl:
+      api === "anthropic"
+        ? endpoints.anthropicBaseUrl
+        : endpoints.openaiBaseUrl,
+    api,
+  };
+}
+
+/**
+ * Summary provider for the MiniMax hosted API. It delegates to the existing
+ * wire-format implementations so only endpoint and model defaults are new.
+ */
+export class MiniMaxSummaryProvider implements SummaryProvider {
+  name = "minimax";
+  readonly model: string;
+  readonly baseUrl: string;
+  readonly api: MiniMaxApiFlavor;
+  private readonly delegate: SummaryProvider;
+
+  constructor(options: {
+    apiKey: string;
+    model?: string;
+    baseUrl?: string | null;
+    region?: MiniMaxRegion;
+    api?: MiniMaxApiFlavor;
+  }) {
+    const endpoint = resolveMiniMaxEndpoint({
+      baseUrl: options.baseUrl,
+      region: options.region,
+      api: options.api,
+    });
+    this.model = options.model ?? MINIMAX_DEFAULT_MODEL;
+    this.baseUrl = endpoint.baseUrl;
+    this.api = endpoint.api;
+    this.delegate =
+      endpoint.api === "anthropic"
+        ? new AnthropicSummaryProvider({
+            apiKey: options.apiKey,
+            model: this.model,
+            baseUrl: endpoint.baseUrl,
+          })
+        : new OpenAICompatibleSummaryProvider({
+            apiKey: options.apiKey,
+            model: this.model,
+            baseUrl: endpoint.baseUrl,
+          });
+  }
+
+  async generate(input: {
+    symbolName: string;
+    kind?: string;
+    signature?: string;
+    heuristicSummary?: string;
+    embeddingInput?: PreparedSymbolEmbeddingInput;
+  }): Promise<string> {
+    return this.delegate.generate(input);
+  }
+}
+
 export function createSummaryProvider(
   provider: string,
   options?: {
@@ -259,6 +368,25 @@ export function createSummaryProvider(
     // credential to an arbitrary summaryApiBaseUrl would be a security leak.
     const apiKey = options?.summaryApiKey ?? "ollama";
     return new OpenAICompatibleSummaryProvider({
+      apiKey,
+      model: options?.summaryModel,
+      baseUrl: options?.summaryApiBaseUrl,
+    });
+  }
+
+  if (provider === "minimax") {
+    // Do NOT fall back to any other provider's key here - MiniMax is a
+    // distinct hosted API and forwarding a foreign credential would leak it.
+    const apiKey =
+      options?.summaryApiKey ?? process.env["MINIMAX_API_KEY"] ?? "";
+    if (!apiKey) {
+      logger.warn(
+        "No API key found for summary provider 'minimax'. Set MINIMAX_API_KEY or summaryApiKey config. " +
+          "Skipping summary generation to preserve existing summaries.",
+      );
+      return null;
+    }
+    return new MiniMaxSummaryProvider({
       apiKey,
       model: options?.summaryModel,
       baseUrl: options?.summaryApiBaseUrl,

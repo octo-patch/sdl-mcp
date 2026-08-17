@@ -920,23 +920,24 @@
           "enum": [
             "api",
             "local",
+            "minimax",
             "mock",
             null
           ],
           "default": "mock",
-          "description": "Summary backend, independent from the embedding provider. 'api' = Anthropic, 'local' = OpenAI-compatible (Ollama), 'mock' = deterministic concise prose. Null is treated as unset and resolves to 'mock'."
+          "description": "Summary backend, independent from the embedding provider. 'api' = Anthropic, 'local' = OpenAI-compatible (Ollama), 'minimax' = MiniMax hosted API, 'mock' = deterministic concise prose. Null is treated as unset and resolves to 'mock'."
         },
         "summaryModel": {
           "type": "string",
-          "description": "Model name for summary generation. Defaults per-provider: 'api' uses 'claude-haiku-4-5-20251001', 'local' uses 'gpt-4o-mini'."
+          "description": "Model name for summary generation. Defaults per-provider: 'api' uses 'claude-haiku-4-5-20251001', 'local' uses 'gpt-4o-mini', 'minimax' uses 'MiniMax-M3' ('MiniMax-M2.7' is also supported)."
         },
         "summaryApiKey": {
           "type": "string",
-          "description": "API key for the summary LLM provider. Falls back to ANTHROPIC_API_KEY environment variable."
+          "description": "API key for the summary LLM provider. Falls back to ANTHROPIC_API_KEY environment variable, or to MINIMAX_API_KEY when summaryProvider is 'minimax'."
         },
         "summaryApiBaseUrl": {
           "type": "string",
-          "description": "Base URL for OpenAI-compatible local providers (e.g., http://localhost:11434 for Ollama)"
+          "description": "Base URL for OpenAI-compatible local providers (e.g., http://localhost:11434 for Ollama). For 'minimax' it overrides the default global endpoint https://api.minimax.io/v1; use https://api.minimaxi.com/v1 for the CN region, or the matching /anthropic URL to send Anthropic-format requests."
         },
         "summaryMaxConcurrency": {
           "type": "integer",

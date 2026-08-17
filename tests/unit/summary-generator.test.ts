@@ -9,6 +9,11 @@ import {
   generateSummariesForRepo,
   AnthropicSummaryProvider,
   OpenAICompatibleSummaryProvider,
+  MiniMaxSummaryProvider,
+  MINIMAX_DEFAULT_MODEL,
+  MINIMAX_MODELS,
+  MINIMAX_REGION_ENDPOINTS,
+  resolveMiniMaxEndpoint,
   summaryCacheKey,
 } from "../../dist/indexer/summary-generator.js";
 import type {
@@ -125,6 +130,129 @@ describe("createSummaryProvider", () => {
     });
     assert.ok(provider, "Should return a provider");
     assert.strictEqual(provider.name, "openai-compatible");
+  });
+});
+
+describe("MiniMax summary provider", () => {
+  let originalApiKey: string | undefined;
+
+  before(() => {
+    originalApiKey = process.env.MINIMAX_API_KEY;
+  });
+
+  after(() => {
+    if (originalApiKey === undefined) {
+      delete process.env.MINIMAX_API_KEY;
+    } else {
+      process.env.MINIMAX_API_KEY = originalApiKey;
+    }
+  });
+
+  it("exposes the current model defaults", () => {
+    assert.strictEqual(MINIMAX_DEFAULT_MODEL, "MiniMax-M3");
+    assert.deepStrictEqual([...MINIMAX_MODELS], ["MiniMax-M3", "MiniMax-M2.7"]);
+  });
+
+  it("exposes global and CN endpoints for both wire formats", () => {
+    assert.deepStrictEqual(MINIMAX_REGION_ENDPOINTS.global_en, {
+      openaiBaseUrl: "https://api.minimax.io/v1",
+      anthropicBaseUrl: "https://api.minimax.io/anthropic",
+    });
+    assert.deepStrictEqual(MINIMAX_REGION_ENDPOINTS.cn_zh, {
+      openaiBaseUrl: "https://api.minimaxi.com/v1",
+      anthropicBaseUrl: "https://api.minimaxi.com/anthropic",
+    });
+  });
+
+  it("defaults to the global OpenAI-compatible endpoint", () => {
+    assert.deepStrictEqual(resolveMiniMaxEndpoint(), {
+      baseUrl: "https://api.minimax.io/v1",
+      api: "openai",
+    });
+  });
+
+  it("resolves the CN region for both wire formats", () => {
+    assert.deepStrictEqual(resolveMiniMaxEndpoint({ region: "cn_zh" }), {
+      baseUrl: "https://api.minimaxi.com/v1",
+      api: "openai",
+    });
+    assert.deepStrictEqual(
+      resolveMiniMaxEndpoint({ region: "cn_zh", api: "anthropic" }),
+      { baseUrl: "https://api.minimaxi.com/anthropic", api: "anthropic" },
+    );
+  });
+
+  it("infers the wire format from an explicit base URL", () => {
+    assert.deepStrictEqual(
+      resolveMiniMaxEndpoint({ baseUrl: "https://api.minimax.io/anthropic/" }),
+      { baseUrl: "https://api.minimax.io/anthropic", api: "anthropic" },
+    );
+    assert.deepStrictEqual(
+      resolveMiniMaxEndpoint({ baseUrl: "https://api.minimaxi.com/v1" }),
+      { baseUrl: "https://api.minimaxi.com/v1", api: "openai" },
+    );
+  });
+
+  it("applies the default model and endpoint", () => {
+    const provider = new MiniMaxSummaryProvider({ apiKey: "test-key" });
+    assert.strictEqual(provider.name, "minimax");
+    assert.strictEqual(provider.model, MINIMAX_DEFAULT_MODEL);
+    assert.strictEqual(provider.baseUrl, "https://api.minimax.io/v1");
+    assert.strictEqual(provider.api, "openai");
+  });
+
+  it("honours an explicit model override", () => {
+    const provider = new MiniMaxSummaryProvider({
+      apiKey: "test-key",
+      model: MINIMAX_MODELS[1],
+    });
+    assert.strictEqual(provider.model, "MiniMax-M2.7");
+  });
+
+  it("returns null for 'minimax' provider when no API key is available", () => {
+    delete process.env.MINIMAX_API_KEY;
+    assert.strictEqual(createSummaryProvider("minimax"), null);
+  });
+
+  it("returns MiniMaxSummaryProvider when a key is configured", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "test-key-123",
+    });
+    assert.ok(provider, "Should return a provider");
+    assert.strictEqual(provider.name, "minimax");
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
+  });
+
+  it("reads the API key from the MINIMAX_API_KEY env var", () => {
+    process.env.MINIMAX_API_KEY = "env-test-key";
+    const provider = createSummaryProvider("minimax");
+    assert.ok(provider, "Should return a provider");
+    assert.strictEqual(provider.name, "minimax");
+  });
+
+  it("does not reuse an unrelated credential for 'minimax'", () => {
+    delete process.env.MINIMAX_API_KEY;
+    const originalOtherKey = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "unrelated-key";
+    try {
+      assert.strictEqual(createSummaryProvider("minimax"), null);
+    } finally {
+      if (originalOtherKey === undefined) {
+        delete process.env.ANTHROPIC_API_KEY;
+      } else {
+        process.env.ANTHROPIC_API_KEY = originalOtherKey;
+      }
+    }
+  });
+
+  it("routes a configured CN base URL through the factory", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "test-key",
+      summaryApiBaseUrl: MINIMAX_REGION_ENDPOINTS.cn_zh.anthropicBaseUrl,
+    }) as MiniMaxSummaryProvider | null;
+    assert.ok(provider, "Should return a provider");
+    assert.strictEqual(provider.baseUrl, "https://api.minimaxi.com/anthropic");
+    assert.strictEqual(provider.api, "anthropic");
   });
 });
 

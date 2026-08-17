@@ -315,12 +315,13 @@ The summary system interacts with the embedding pipeline to create four distinct
 
 Each symbol now carries `summaryQuality` (0.0-1.0) and `summarySource` fields tracking provenance: `jsdoc` (1.0), `llm` (0.8), `nn-direct` (0.6), `nn-adapted` (0.5), `heuristic-typed` (0.4), `heuristic-fallback` (0.3).
 
-#### Three Providers
+#### Four Providers
 
 | Provider              | Config value | Model default               | Requires                                         |
 | :-------------------- | :----------- | :-------------------------- | :----------------------------------------------- |
 | **Anthropic API**     | `"api"`      | `claude-haiku-4-5-20251001` | `summaryApiKey` or `ANTHROPIC_API_KEY` env var   |
 | **OpenAI-compatible** | `"local"`    | `gpt-4o-mini`               | Local server (e.g., Ollama at `localhost:11434`) |
+| **MiniMax**           | `"minimax"`  | `MiniMax-M3`                | `summaryApiKey` or `MINIMAX_API_KEY` env var     |
 | **Mock**              | `"mock"`     | —                           | Nothing (deterministic heuristic patterns)       |
 
 #### Batch Processing & Caching
@@ -341,7 +342,7 @@ Cache entries automatically invalidate when the symbol's code changes (fingerpri
 {
   "semantic": {
     "generateSummaries": true, // Enable LLM summaries (default: false)
-    "summaryProvider": "api", // "api" | "local" | "mock"
+    "summaryProvider": "api", // "api" | "local" | "minimax" | "mock"
     "summaryModel": "claude-haiku-4-5-20251001",
     "summaryApiKey": "${ANTHROPIC_API_KEY}",
     "summaryApiBaseUrl": null, // Custom endpoint for "local" provider
