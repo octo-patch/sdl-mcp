@@ -583,15 +583,24 @@ export const SemanticConfigSchema = z.object({
   modelCacheDir: z.string().nullish(),
   generateSummaries: z.boolean().default(true),
   /** Summary backend, independent from the embedding provider.
-   *  "api" = Anthropic, "local" = OpenAI-compatible (Ollama), "mock" = deterministic concise prose.
+   *  "api" = Anthropic, "local" = OpenAI-compatible (Ollama),
+   *  "minimax" = MiniMax regional endpoints, "mock" = deterministic concise prose.
    *  Defaults to "mock" so summary generation never requires LLM credentials unless explicitly configured. */
-  summaryProvider: z.enum(["api", "local", "mock"]).nullish().default("mock"),
+  summaryProvider: z
+    .enum(["api", "local", "minimax", "mock"])
+    .nullish()
+    .default("mock"),
 
   /** Model name for summary generation. Defaults per-provider:
-   *  "api" â†’ "claude-haiku-4-5-20251001", "local" â†’ "gpt-4o-mini" (OpenAI-compatible). */
+   *  "api" â†’ "claude-haiku-4-5-20251001", "local" â†’ "gpt-4o-mini" (OpenAI-compatible),
+   *  "minimax" â†’ "MiniMax-M3" ("MiniMax-M2.7" is also served). */
   summaryModel: z.string().nullish(),
   summaryApiKey: z.string().nullish(),
   summaryApiBaseUrl: z.string().nullish(),
+  /** Regional endpoint selection for the "minimax" summary provider.
+   *  "global_en" (default) and "cn_zh" each expose an OpenAI-compatible and an
+   *  Anthropic-compatible base URL. Ignored when `summaryApiBaseUrl` is set. */
+  summaryApiRegion: z.enum(["global_en", "cn_zh"]).nullish(),
   summaryMaxConcurrency: z.number().int().min(1).max(32).default(5),
   summaryBatchSize: z.number().int().min(1).max(50).default(20),
   /**

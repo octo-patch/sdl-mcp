@@ -260,6 +260,28 @@ describe("SemanticConfigSchema defaults", () => {
     assert.strictEqual(result.summaryProvider, null);
   });
 
+  it("SemanticConfigSchema.summaryProvider accepts minimax", () => {
+    const result = SemanticConfigSchema.parse({ summaryProvider: "minimax" });
+    assert.strictEqual(result.summaryProvider, "minimax");
+  });
+
+  it("SemanticConfigSchema.summaryApiRegion is unset by default and accepts both regions", () => {
+    assert.strictEqual(
+      SemanticConfigSchema.parse({}).summaryApiRegion,
+      undefined,
+    );
+    for (const region of ["global_en", "cn_zh"]) {
+      const result = SemanticConfigSchema.parse({ summaryApiRegion: region });
+      assert.strictEqual(result.summaryApiRegion, region);
+    }
+  });
+
+  it("SemanticConfigSchema.summaryApiRegion rejects unknown regions", () => {
+    assert.throws(() =>
+      SemanticConfigSchema.parse({ summaryApiRegion: "not-a-region" }),
+    );
+  });
+
 
 });
 

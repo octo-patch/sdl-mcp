@@ -228,12 +228,96 @@ export class OpenAICompatibleSummaryProvider implements SummaryProvider {
   }
 }
 
+/**
+ * Regional MiniMax endpoints. Every region publishes the same models behind
+ * both an OpenAI-compatible (`/v1`) and an Anthropic-compatible (`/anthropic`)
+ * base URL, so the wire format is picked from the resolved base URL rather
+ * than from a separate switch.
+ */
+export const MINIMAX_REGION_ENDPOINTS = {
+  global_en: {
+    openaiBaseUrl: "https://api.minimax.io/v1",
+    anthropicBaseUrl: "https://api.minimax.io/anthropic",
+  },
+  cn_zh: {
+    openaiBaseUrl: "https://api.minimaxi.com/v1",
+    anthropicBaseUrl: "https://api.minimaxi.com/anthropic",
+  },
+} as const;
+
+export type MiniMaxRegion = keyof typeof MINIMAX_REGION_ENDPOINTS;
+
+/** Region used when `summaryApiRegion` is unset. */
+export const MINIMAX_DEFAULT_REGION: MiniMaxRegion = "global_en";
+
+/** Default summary model for the MiniMax provider. */
+export const MINIMAX_DEFAULT_MODEL = "MiniMax-M3";
+
+/** Models the MiniMax provider is known to serve on both wire formats. */
+export const MINIMAX_SUPPORTED_MODELS = ["MiniMax-M3", "MiniMax-M2.7"] as const;
+
+/**
+ * True when a MiniMax base URL addresses the Anthropic-compatible surface.
+ * The OpenAI-compatible surface ends in `/v1` and is the default.
+ */
+function usesAnthropicWireFormat(baseUrl: string): boolean {
+  return /\/anthropic$/.test(baseUrl);
+}
+
+/**
+ * Summary provider for MiniMax. MiniMax exposes both an OpenAI-compatible and
+ * an Anthropic-compatible surface per region, so this provider resolves the
+ * endpoint and then delegates the HTTP call to the matching wire-format
+ * provider instead of duplicating request handling.
+ */
+export class MiniMaxSummaryProvider implements SummaryProvider {
+  name = "minimax";
+  readonly baseUrl: string;
+  readonly model: string;
+  private readonly delegate: SummaryProvider;
+
+  constructor(options: {
+    apiKey: string;
+    model?: string;
+    baseUrl?: string;
+    region?: MiniMaxRegion;
+  }) {
+    const region = options.region ?? MINIMAX_DEFAULT_REGION;
+    const endpoints = MINIMAX_REGION_ENDPOINTS[region];
+    // An explicit base URL wins so self-hosted gateways stay usable.
+    this.baseUrl = (options.baseUrl ?? endpoints.openaiBaseUrl).replace(
+      /\/+$/,
+      "",
+    );
+    this.model = options.model ?? MINIMAX_DEFAULT_MODEL;
+    const delegateOptions = {
+      apiKey: options.apiKey,
+      model: this.model,
+      baseUrl: this.baseUrl,
+    };
+    this.delegate = usesAnthropicWireFormat(this.baseUrl)
+      ? new AnthropicSummaryProvider(delegateOptions)
+      : new OpenAICompatibleSummaryProvider(delegateOptions);
+  }
+
+  async generate(input: {
+    symbolName: string;
+    kind?: string;
+    signature?: string;
+    heuristicSummary?: string;
+    embeddingInput?: PreparedSymbolEmbeddingInput;
+  }): Promise<string> {
+    return this.delegate.generate(input);
+  }
+}
+
 export function createSummaryProvider(
   provider: string,
   options?: {
     summaryModel?: string;
     summaryApiKey?: string;
     summaryApiBaseUrl?: string;
+    summaryApiRegion?: MiniMaxRegion;
   },
 ): SummaryProvider | null {
   if (provider === "api") {
@@ -262,6 +346,27 @@ export function createSummaryProvider(
       apiKey,
       model: options?.summaryModel,
       baseUrl: options?.summaryApiBaseUrl,
+    });
+  }
+
+  if (provider === "minimax") {
+    // Do NOT fall back to ANTHROPIC_API_KEY here — even on the
+    // Anthropic-compatible surface this is a different vendor's endpoint, and
+    // forwarding that credential would leak it.
+    const apiKey =
+      options?.summaryApiKey ?? process.env["MINIMAX_API_KEY"] ?? "";
+    if (!apiKey) {
+      logger.warn(
+        "No API key found for summary provider 'minimax'. Set MINIMAX_API_KEY or summaryApiKey config. " +
+          "Skipping summary generation to preserve existing summaries.",
+      );
+      return null;
+    }
+    return new MiniMaxSummaryProvider({
+      apiKey,
+      model: options?.summaryModel,
+      baseUrl: options?.summaryApiBaseUrl ?? undefined,
+      region: options?.summaryApiRegion,
     });
   }
 
@@ -452,6 +557,7 @@ export async function generateSummaryWithGuardrails(input: {
   summaryModel?: string;
   summaryApiKey?: string;
   summaryApiBaseUrl?: string;
+  summaryApiRegion?: MiniMaxRegion;
   skipCacheLookup?: boolean;
   persistCache?: boolean;
 }): Promise<GeneratedSummaryResult> {
@@ -461,6 +567,7 @@ export async function generateSummaryWithGuardrails(input: {
     summaryModel: input.summaryModel,
     summaryApiKey: input.summaryApiKey,
     summaryApiBaseUrl: input.summaryApiBaseUrl,
+    summaryApiRegion: input.summaryApiRegion,
   });
 
   // If provider creation returned null (e.g., misconfigured local provider),
@@ -600,6 +707,7 @@ export async function generateSummariesForRepo(
   const summaryModel = semantic.summaryModel;
   const summaryApiKey = semantic.summaryApiKey;
   const summaryApiBaseUrl = semantic.summaryApiBaseUrl;
+  const summaryApiRegion = semantic.summaryApiRegion;
 
   // Resolve the actual provider to determine its name for cache hashing.
   // This must match what generateSummaryWithGuardrails computes internally.
@@ -607,6 +715,7 @@ export async function generateSummariesForRepo(
     summaryModel: summaryModel ?? undefined,
     summaryApiKey: summaryApiKey ?? undefined,
     summaryApiBaseUrl: summaryApiBaseUrl ?? undefined,
+    summaryApiRegion: summaryApiRegion ?? undefined,
   });
 
   // If provider creation returned null (e.g., misconfigured local provider),
@@ -803,6 +912,7 @@ export async function generateSummariesForRepo(
           summaryModel: summaryModel ?? undefined,
           summaryApiKey: summaryApiKey ?? undefined,
           summaryApiBaseUrl: summaryApiBaseUrl ?? undefined,
+          summaryApiRegion: summaryApiRegion ?? undefined,
           skipCacheLookup: true,
           persistCache: false,
         });

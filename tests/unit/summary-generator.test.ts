@@ -9,6 +9,11 @@ import {
   generateSummariesForRepo,
   AnthropicSummaryProvider,
   OpenAICompatibleSummaryProvider,
+  MiniMaxSummaryProvider,
+  MINIMAX_DEFAULT_MODEL,
+  MINIMAX_DEFAULT_REGION,
+  MINIMAX_REGION_ENDPOINTS,
+  MINIMAX_SUPPORTED_MODELS,
   summaryCacheKey,
 } from "../../dist/indexer/summary-generator.js";
 import type {
@@ -125,6 +130,137 @@ describe("createSummaryProvider", () => {
     });
     assert.ok(provider, "Should return a provider");
     assert.strictEqual(provider.name, "openai-compatible");
+  });
+});
+
+describe("createSummaryProvider minimax", () => {
+  let originalAnthropicKey: string | undefined;
+  let originalMiniMaxKey: string | undefined;
+
+  before(() => {
+    originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
+    originalMiniMaxKey = process.env.MINIMAX_API_KEY;
+  });
+
+  after(() => {
+    for (const [name, value] of [
+      ["ANTHROPIC_API_KEY", originalAnthropicKey],
+      ["MINIMAX_API_KEY", originalMiniMaxKey],
+    ] as const) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+  });
+
+  it("returns null for 'minimax' provider when no API key is available", () => {
+    delete process.env.MINIMAX_API_KEY;
+    const provider = createSummaryProvider("minimax");
+    assert.strictEqual(provider, null);
+  });
+
+  it("does NOT fall back to ANTHROPIC_API_KEY for 'minimax'", () => {
+    // Security: the MiniMax endpoints belong to a different vendor, so the
+    // Anthropic credential must never be forwarded to them.
+    delete process.env.MINIMAX_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "anthropic-env-key";
+    const provider = createSummaryProvider("minimax");
+    assert.strictEqual(provider, null);
+  });
+
+  it("returns MiniMaxSummaryProvider using MINIMAX_API_KEY env var", () => {
+    process.env.MINIMAX_API_KEY = "minimax-env-key";
+    const provider = createSummaryProvider("minimax");
+    assert.ok(provider, "Should return a provider");
+    assert.strictEqual(provider.name, "minimax");
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
+  });
+
+  it("defaults to the global OpenAI-compatible endpoint and default model", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "test-key",
+    });
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
+    assert.strictEqual(
+      provider.baseUrl,
+      MINIMAX_REGION_ENDPOINTS[MINIMAX_DEFAULT_REGION].openaiBaseUrl,
+    );
+    assert.strictEqual(provider.model, MINIMAX_DEFAULT_MODEL);
+  });
+
+  it("resolves the CN regional endpoint", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "test-key",
+      summaryApiRegion: "cn_zh",
+    });
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
+    assert.strictEqual(
+      provider.baseUrl,
+      MINIMAX_REGION_ENDPOINTS.cn_zh.openaiBaseUrl,
+    );
+  });
+
+  it("lets an explicit base URL override the regional endpoint", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "test-key",
+      summaryApiRegion: "cn_zh",
+      summaryApiBaseUrl: "https://gateway.internal.example.com/v1/",
+    });
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
+    assert.strictEqual(
+      provider.baseUrl,
+      "https://gateway.internal.example.com/v1",
+    );
+  });
+
+  it("passes a custom supported model through", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "test-key",
+      summaryModel: MINIMAX_SUPPORTED_MODELS[1],
+    });
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
+    assert.strictEqual(provider.model, MINIMAX_SUPPORTED_MODELS[1]);
+  });
+});
+
+describe("MiniMaxSummaryProvider construction", () => {
+  it("exposes both wire formats per region", () => {
+    for (const region of ["global_en", "cn_zh"] as const) {
+      const endpoints = MINIMAX_REGION_ENDPOINTS[region];
+      assert.match(endpoints.openaiBaseUrl, /^https:\/\/.+\/v1$/);
+      assert.match(endpoints.anthropicBaseUrl, /^https:\/\/.+\/anthropic$/);
+    }
+  });
+
+  it("keeps the default model inside the supported model list", () => {
+    assert.ok(MINIMAX_SUPPORTED_MODELS.includes(MINIMAX_DEFAULT_MODEL));
+  });
+
+  it("selects the Anthropic wire format for the /anthropic base URL", () => {
+    const provider = new MiniMaxSummaryProvider({
+      apiKey: "test-key",
+      baseUrl: MINIMAX_REGION_ENDPOINTS.global_en.anthropicBaseUrl,
+    });
+    assert.strictEqual(provider.name, "minimax");
+    assert.strictEqual(
+      provider.baseUrl,
+      MINIMAX_REGION_ENDPOINTS.global_en.anthropicBaseUrl,
+    );
+  });
+
+  it("keeps the provider name stable across regions for cache keying", () => {
+    const global = new MiniMaxSummaryProvider({
+      apiKey: "test-key",
+      region: "global_en",
+    });
+    const cn = new MiniMaxSummaryProvider({
+      apiKey: "test-key",
+      region: "cn_zh",
+    });
+    assert.strictEqual(global.name, cn.name);
+    assert.notStrictEqual(global.baseUrl, cn.baseUrl);
   });
 });
 
