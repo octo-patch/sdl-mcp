@@ -9,6 +9,7 @@ import {
   generateSummariesForRepo,
   AnthropicSummaryProvider,
   OpenAICompatibleSummaryProvider,
+  MiniMaxSummaryProvider,
   summaryCacheKey,
 } from "../../dist/indexer/summary-generator.js";
 import type {
@@ -125,6 +126,15 @@ describe("createSummaryProvider", () => {
     });
     assert.ok(provider, "Should return a provider");
     assert.strictEqual(provider.name, "openai-compatible");
+  });
+
+  it("returns MiniMaxSummaryProvider with current default model", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "test-key",
+    });
+    assert.ok(provider);
+    assert.strictEqual(provider.name, "minimax");
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
   });
 });
 
@@ -302,6 +312,13 @@ describe("OpenAICompatibleSummaryProvider construction", () => {
     // If it had used ANTHROPIC_API_KEY, it would still be openai-compatible,
     // but the test confirms the provider was created (not null) without
     // requiring an env var.
+  });
+});
+
+describe("MiniMaxSummaryProvider construction", () => {
+  it("uses the global OpenAI-compatible endpoint by default", () => {
+    const provider = new MiniMaxSummaryProvider({ apiKey: "test-key" });
+    assert.strictEqual(provider.name, "minimax");
   });
 });
 

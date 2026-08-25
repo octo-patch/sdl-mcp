@@ -33,6 +33,20 @@ export interface SummaryProvider {
   }): Promise<string>;
 }
 
+/** Official MiniMax API endpoints for the English/global and Chinese regions. */
+export const MINIMAX_ENDPOINTS = {
+  global_en: {
+    openaiBaseUrl: "https://api.minimax.io/v1",
+    anthropicBaseUrl: "https://api.minimax.io/anthropic",
+  },
+  cn_zh: {
+    openaiBaseUrl: "https://api.minimaxi.com/v1",
+    anthropicBaseUrl: "https://api.minimaxi.com/anthropic",
+  },
+} as const;
+
+export const MINIMAX_DEFAULT_MODELS = ["MiniMax-M3", "MiniMax-M2.7"] as const;
+
 const ANTHROPIC_SYSTEM_PROMPT =
   "You are a code documentation assistant. Write a 1-3 sentence summary of what this TypeScript/JavaScript symbol does. Be specific, not generic. Focus on behavior, not structure.";
 
@@ -152,9 +166,9 @@ export class AnthropicSummaryProvider implements SummaryProvider {
 
 export class OpenAICompatibleSummaryProvider implements SummaryProvider {
   name = "openai-compatible";
-  private readonly apiKey: string;
-  private readonly model: string;
-  private readonly baseUrl: string;
+  protected readonly apiKey: string;
+  protected readonly model: string;
+  protected readonly baseUrl: string;
 
   constructor(options: { apiKey: string; model?: string; baseUrl?: string }) {
     this.apiKey = options.apiKey;
@@ -228,6 +242,36 @@ export class OpenAICompatibleSummaryProvider implements SummaryProvider {
   }
 }
 
+/** MiniMax's OpenAI-compatible summary provider with current model defaults. */
+export class MiniMaxSummaryProvider extends OpenAICompatibleSummaryProvider {
+  override name = "minimax";
+
+  constructor(options: { apiKey: string; model?: string; baseUrl?: string }) {
+    super({
+      apiKey: options.apiKey,
+      model: options.model ?? "MiniMax-M3",
+      baseUrl: options.baseUrl ?? MINIMAX_ENDPOINTS.global_en.openaiBaseUrl,
+    });
+  }
+
+  override async generate(input: {
+    symbolName: string;
+    kind?: string;
+    signature?: string;
+    heuristicSummary?: string;
+    embeddingInput?: PreparedSymbolEmbeddingInput;
+  }): Promise<string> {
+    if (this.baseUrl.endsWith("/anthropic")) {
+      return new AnthropicSummaryProvider({
+        apiKey: this.apiKey,
+        model: this.model,
+        baseUrl: this.baseUrl,
+      }).generate(input);
+    }
+    return super.generate(input);
+  }
+}
+
 export function createSummaryProvider(
   provider: string,
   options?: {
@@ -259,6 +303,23 @@ export function createSummaryProvider(
     // credential to an arbitrary summaryApiBaseUrl would be a security leak.
     const apiKey = options?.summaryApiKey ?? "ollama";
     return new OpenAICompatibleSummaryProvider({
+      apiKey,
+      model: options?.summaryModel,
+      baseUrl: options?.summaryApiBaseUrl,
+    });
+  }
+
+  if (provider === "minimax") {
+    const apiKey =
+      options?.summaryApiKey ?? process.env["MINIMAX_API_KEY"] ?? "";
+    if (!apiKey) {
+      logger.warn(
+        "No API key found for summary provider 'minimax'. Set MINIMAX_API_KEY or summaryApiKey config. " +
+          "Skipping summary generation to preserve existing summaries.",
+      );
+      return null;
+    }
+    return new MiniMaxSummaryProvider({
       apiKey,
       model: options?.summaryModel,
       baseUrl: options?.summaryApiBaseUrl,
