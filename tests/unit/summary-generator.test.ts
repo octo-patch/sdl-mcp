@@ -9,6 +9,9 @@ import {
   generateSummariesForRepo,
   AnthropicSummaryProvider,
   OpenAICompatibleSummaryProvider,
+  MiniMaxSummaryProvider,
+  MINIMAX_ENDPOINTS,
+  MINIMAX_SUMMARY_MODELS,
   summaryCacheKey,
 } from "../../dist/indexer/summary-generator.js";
 import type {
@@ -125,6 +128,25 @@ describe("createSummaryProvider", () => {
     });
     assert.ok(provider, "Should return a provider");
     assert.strictEqual(provider.name, "openai-compatible");
+  });
+
+  it("returns MiniMax provider with current defaults and regional endpoints", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "test-minimax-key",
+    });
+    assert.ok(provider);
+    assert.strictEqual(provider.name, "minimax");
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
+    assert.deepStrictEqual(MINIMAX_SUMMARY_MODELS, ["MiniMax-M3", "MiniMax-M2.7"]);
+    assert.strictEqual(MINIMAX_ENDPOINTS.global.openai, "https://api.minimax.io/v1");
+    assert.strictEqual(MINIMAX_ENDPOINTS.global.anthropic, "https://api.minimax.io/anthropic");
+    assert.strictEqual(MINIMAX_ENDPOINTS.cn.openai, "https://api.minimaxi.com/v1");
+    assert.strictEqual(MINIMAX_ENDPOINTS.cn.anthropic, "https://api.minimaxi.com/anthropic");
+  });
+
+  it("returns null for MiniMax provider without an API key", () => {
+    const provider = createSummaryProvider("minimax");
+    assert.strictEqual(provider, null);
   });
 });
 

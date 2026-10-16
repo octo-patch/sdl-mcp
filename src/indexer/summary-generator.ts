@@ -33,6 +33,20 @@ export interface SummaryProvider {
   }): Promise<string>;
 }
 
+/** MiniMax regional endpoints for its OpenAI- and Anthropic-compatible APIs. */
+export const MINIMAX_ENDPOINTS = {
+  global: {
+    openai: "https://api.minimax.io/v1",
+    anthropic: "https://api.minimax.io/anthropic",
+  },
+  cn: {
+    openai: "https://api.minimaxi.com/v1",
+    anthropic: "https://api.minimaxi.com/anthropic",
+  },
+} as const;
+
+export const MINIMAX_SUMMARY_MODELS = ["MiniMax-M3", "MiniMax-M2.7"] as const;
+
 const ANTHROPIC_SYSTEM_PROMPT =
   "You are a code documentation assistant. Write a 1-3 sentence summary of what this code symbol does. Be specific, not generic. Focus on behavior, not structure.";
 
@@ -228,6 +242,19 @@ export class OpenAICompatibleSummaryProvider implements SummaryProvider {
   }
 }
 
+/** Summary provider for MiniMax's OpenAI-compatible chat endpoint. */
+export class MiniMaxSummaryProvider extends OpenAICompatibleSummaryProvider {
+  override name = "minimax";
+
+  constructor(options: { apiKey: string; model?: string; baseUrl?: string }) {
+    super({
+      apiKey: options.apiKey,
+      model: options.model ?? MINIMAX_SUMMARY_MODELS[0],
+      baseUrl: options.baseUrl ?? MINIMAX_ENDPOINTS.global.openai,
+    });
+  }
+}
+
 export function createSummaryProvider(
   provider: string,
   options?: {
@@ -262,6 +289,23 @@ export function createSummaryProvider(
       apiKey,
       model: options?.summaryModel,
       baseUrl: options?.summaryApiBaseUrl,
+    });
+  }
+
+  if (provider === "minimax") {
+    const apiKey =
+      options?.summaryApiKey ?? process.env["MINIMAX_API_KEY"] ?? "";
+    if (!apiKey) {
+      logger.warn(
+        "No API key found for summary provider 'minimax'. Set MINIMAX_API_KEY or summaryApiKey config. " +
+          "Skipping summary generation to preserve existing summaries.",
+      );
+      return null;
+    }
+    return new MiniMaxSummaryProvider({
+      apiKey,
+      model: options?.summaryModel,
+      baseUrl: options?.summaryApiBaseUrl ?? undefined,
     });
   }
 
