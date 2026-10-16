@@ -925,23 +925,24 @@
           "enum": [
             "api",
             "local",
+            "minimax",
             "mock",
             null
           ],
           "default": "mock",
-          "description": "Summary backend, independent from the embedding provider. 'api' = Anthropic, 'local' = OpenAI-compatible (Ollama), 'mock' = deterministic concise prose. Null is treated as unset and resolves to 'mock'."
+          "description": "Summary backend, independent from the embedding provider. 'api' = Anthropic, 'local' = OpenAI-compatible (Ollama), 'minimax' = MiniMax global or China OpenAI-compatible endpoint, 'mock' = deterministic concise prose. Null is treated as unset and resolves to 'mock'."
         },
         "summaryModel": {
           "type": "string",
-          "description": "Model name for summary generation. Defaults per-provider: 'api' uses 'claude-haiku-4-5-20251001', 'local' uses 'gpt-4o-mini'."
+          "description": "Model name for summary generation. Defaults per-provider: 'api' uses 'claude-haiku-4-5-20251001', 'local' uses 'gpt-4o-mini', and 'minimax' uses 'MiniMax-M3'."
         },
         "summaryApiKey": {
           "type": "string",
-          "description": "API key for the summary LLM provider. Falls back to ANTHROPIC_API_KEY environment variable."
+          "description": "API key for the summary LLM provider. MiniMax falls back to MINIMAX_API_KEY; Anthropic falls back to ANTHROPIC_API_KEY."
         },
         "summaryApiBaseUrl": {
           "type": "string",
-          "description": "Base URL for OpenAI-compatible local providers (e.g., http://localhost:11434 for Ollama)"
+          "description": "Base URL for OpenAI-compatible summary providers. MiniMax defaults to https://api.minimax.io/v1; use https://api.minimaxi.com/v1 for China."
         },
         "summaryMaxConcurrency": {
           "type": "integer",
