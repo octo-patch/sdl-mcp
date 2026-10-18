@@ -346,7 +346,7 @@ Cache entries automatically invalidate when the symbol's code changes (fingerpri
 {
   "semantic": {
     "generateSummaries": true, // Enable LLM summaries (default: false)
-    "summaryProvider": "api", // "api" | "local" | "mock"
+    "summaryProvider": "api", // "api" | "local" | "minimax" | "mock"
     "summaryModel": "claude-haiku-4-5-20251001",
     "summaryApiKey": "${ANTHROPIC_API_KEY}",
     "summaryApiBaseUrl": null, // Custom endpoint for "local" provider

@@ -587,9 +587,9 @@ export const SemanticConfigSchema = z.object({
   modelCacheDir: z.string().nullish(),
   generateSummaries: z.boolean().default(true),
   /** Summary backend, independent from the embedding provider.
-   *  "api" = Anthropic, "local" = OpenAI-compatible (Ollama), "mock" = deterministic concise prose.
+   *  "api" = Anthropic, "local" = OpenAI-compatible (Ollama), "minimax" = MiniMax OpenAI-compatible, "mock" = deterministic concise prose.
    *  Defaults to "mock" so summary generation never requires LLM credentials unless explicitly configured. */
-  summaryProvider: z.enum(["api", "local", "mock"]).nullish().default("mock"),
+  summaryProvider: z.enum(["api", "local", "minimax", "mock"]).nullish().default("mock"),
 
   /** Model name for summary generation. Defaults per-provider:
    *  "api" â†’ "claude-haiku-4-5-20251001", "local" â†’ "gpt-4o-mini" (OpenAI-compatible). */

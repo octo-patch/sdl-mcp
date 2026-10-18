@@ -814,7 +814,7 @@ Or add `"summaryApiKey": "sk-ant-..."` to the `semantic` config block.
     "modelCacheDir": null, // Override model storage path
     // -- LLM Summaries -------------------------------------------
     "generateSummaries": false, // Enable LLM summary generation
-    "summaryProvider": null, // "api" | "local" | "mock" (default: inherit from provider)
+    "summaryProvider": null, // "api" | "local" | "minimax" | "mock" (default: inherit from provider)
     "summaryModel": null, // Model name (default: claude-haiku-4-5-20251001 for api)
     "summaryApiKey": null, // API key (or use ANTHROPIC_API_KEY env var)
     "summaryApiBaseUrl": null, // Custom endpoint (default: Anthropic for api, localhost:11434 for local)
