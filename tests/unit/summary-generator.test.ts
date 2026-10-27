@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 
 import {
   createSummaryProvider,
+  MiniMaxSummaryProvider,
   generateSummariesForRepo,
   AnthropicSummaryProvider,
   OpenAICompatibleSummaryProvider,
@@ -125,6 +126,14 @@ describe("createSummaryProvider", () => {
     });
     assert.ok(provider, "Should return a provider");
     assert.strictEqual(provider.name, "openai-compatible");
+  });
+
+  it("returns MiniMax provider with the global OpenAI endpoint and flagship default", () => {
+    const provider = createSummaryProvider("minimax", {
+      summaryApiKey: "test-key",
+    });
+    assert.ok(provider instanceof MiniMaxSummaryProvider);
+    assert.strictEqual(provider.name, "minimax");
   });
 });
 
